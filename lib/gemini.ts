@@ -34,6 +34,7 @@ export interface AutoDashboardResponse {
   summary: string;
   kpis: KPIConfig[];
   charts: AutoChartResult[];
+  suggestedQuestions: string[];
   error: string | null;
 }
 
@@ -153,6 +154,9 @@ Return ONLY a valid JSON object (no markdown fences, no explanation) with this e
       "insight": "<2-4 sentence detailed insight explaining what this chart reveals, including specific numbers, percentages, comparisons, and trends. Example: 'The Technology category dominates with 45% of total views (1.08M), which is 2.3x higher than the second-place Entertainment category (470K views).'>"
     }
   ],
+  "suggestedQuestions": [
+    "<natural language question a user might ask about this dataset>"
+  ],
   "error": null
 }
 
@@ -168,7 +172,8 @@ RULES:
 9. ORDER BY for meaningful sorting.
 10. Use readable aliases with AS.
 11. NEVER invent column names. Only use columns from the schema.
-12. For aggregations, always use GROUP BY and appropriate aggregate functions.`;
+12. For aggregations, always use GROUP BY and appropriate aggregate functions.
+13. Generate exactly 5 suggestedQuestions — natural language questions a user could ask about this specific dataset. Make them diverse: include aggregations, comparisons, distributions, rankings, and filtering. Reference actual column names and plausible values from the sample data. Example: "What are the top 10 products by revenue?" or "Show the distribution of orders by status as a pie chart".`;
 
 export async function analyzeDataset(
   schema: string,
@@ -208,6 +213,7 @@ Analyze this dataset and return the JSON object. No markdown, no code fences, no
       summary: "",
       kpis: [],
       charts: [],
+      suggestedQuestions: [],
       error: `Failed to parse AI analysis. Raw output: ${text.substring(0, 200)}`,
     };
   }

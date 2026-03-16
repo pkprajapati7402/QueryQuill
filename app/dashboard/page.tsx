@@ -49,19 +49,12 @@ interface AutoDashboard {
   summary: string;
   kpis: { label: string; value: string | number; description: string }[];
   charts: { config: ChartConfig; data: Record<string, string | number>[]; insight: string }[];
+  suggestedQuestions: string[];
 }
 
 /* ── Constants ────────────────────────────────────────────────────────── */
 
 const KPI_ACCENTS = ["kpi-accent-indigo", "kpi-accent-violet", "kpi-accent-pink", "kpi-accent-cyan"];
-
-const EXAMPLE_QUERIES = [
-  "Show me total views by content category, sorted highest to lowest",
-  "What is the average sentiment score by region?",
-  "Compare average likes and comments across the top 5 categories by views",
-  "Which languages produce the most content? Show as a pie chart",
-  "Show the distribution of ads enabled vs disabled across categories",
-];
 
 /* ── Page ─────────────────────────────────────────────────────────────── */
 
@@ -144,6 +137,7 @@ export default function DashboardPage() {
         charts: resolvedCharts.filter(
           (c: { data: Record<string, string | number>[] }) => c.data.length > 0
         ),
+        suggestedQuestions: analysisResult.suggestedQuestions || [],
       });
     } catch (err) {
       console.error("Auto-analysis failed:", err);
@@ -292,13 +286,15 @@ export default function DashboardPage() {
     return value;
   };
 
-  const chatSuggestions = data
-    ? [
-        `What are the top 5 ${data.columns[0] || "categories"}?`,
-        `Show a summary of ${data.columns[data.columns.length > 1 ? 1 : 0]}`,
-        "Compare distributions across categories",
-      ]
-    : [];
+  const chatSuggestions = autoDashboard?.suggestedQuestions?.length
+    ? autoDashboard.suggestedQuestions.slice(0, 3)
+    : data
+      ? [
+          `What are the top 5 ${data.columns[0] || "categories"}?`,
+          `Show a summary of ${data.columns[data.columns.length > 1 ? 1 : 0]}`,
+          "Compare distributions across categories",
+        ]
+      : [];
 
   /* ── Render ─────────────────────────────────────────────────────────── */
 
@@ -522,15 +518,15 @@ export default function DashboardPage() {
               </div>
             )}
 
-            {/* ── Example Queries (when no results) ─────────────────────── */}
-            {results.length === 0 && !isAnalyzing && (
+            {/* ── Suggested Questions (when no results) ─────────────────── */}
+            {results.length === 0 && !isAnalyzing && autoDashboard?.suggestedQuestions && autoDashboard.suggestedQuestions.length > 0 && (
               <div className="glass-card rounded-2xl p-6">
                 <div className="mb-4 flex items-center gap-2 text-sm font-medium text-muted-foreground">
                   <Lightbulb className="h-4 w-4 text-indigo-600" />
                   Try asking...
                 </div>
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {EXAMPLE_QUERIES.map((q) => (
+                  {autoDashboard.suggestedQuestions.map((q) => (
                     <button
                       key={q}
                       onClick={() => handleQuery(q)}
