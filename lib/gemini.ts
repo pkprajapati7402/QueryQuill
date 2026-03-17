@@ -62,7 +62,7 @@ RULES:
    - Parts of a whole / proportions → "pie"
    - Volume or cumulative data → "area"
 2. You may return MULTIPLE charts if the question has multiple dimensions.
-3. The SQL must be valid. The table is always named "data". Use standard SQL functions.
+3. The SQL must be valid. The table name is specified in the schema (e.g. "data", "data_1", "data_2"). Use the correct table name in FROM. If multiple tables exist, choose the one most relevant to the question.
 4. For aggregations, always use GROUP BY and appropriate aggregate functions (SUM, AVG, COUNT, etc.).
 5. ORDER BY for meaningful sorting (e.g., chronological for dates, descending for rankings).
 6. LIMIT results to at most 50 rows for chart readability unless the user asks for more.
@@ -161,12 +161,12 @@ Return ONLY a valid JSON object (no markdown fences, no explanation) with this e
 }
 
 RULES:
-1. Generate exactly 3-5 charts that tell a compelling data story.
+1. Generate a maximum of 4 charts that tell a compelling data story. If multiple tables exist, distribute charts across tables to cover each dataset.
 2. Choose diverse chart types — do not repeat the same type more than twice.
 3. Prioritize analyses that reveal: distribution of categorical data (pie), top/bottom rankings (bar), relationships between numerical columns (bar or area), proportions (pie), and trends over time if date columns exist (line).
-4. Generate 3-4 KPIs that summarize the dataset at a glance. Each KPI SQL must return a single row with a single value.
+4. Generate 3-4 KPIs that summarize the dataset(s) at a glance. Each KPI SQL must return a single row with a single value.
 5. Each insight MUST include specific numbers and comparisons, not vague statements.
-6. The table is always named "data". Use standard SQL functions.
+6. The table name is specified in the schema (e.g. "data", "data_1", "data_2"). Use the correct table name in each SQL FROM clause. If multiple tables exist, generate SQL for each relevant table.
 7. LIMIT results appropriately for readability (top 5-10 for bar/pie, all for line/area trends).
 8. Use different colors for different charts from: #6366f1, #8b5cf6, #ec4899, #f43f5e, #f97316, #eab308, #22c55e, #06b6d4, #3b82f6.
 9. ORDER BY for meaningful sorting.
@@ -188,14 +188,14 @@ export async function analyzeDataset(
 DATABASE SCHEMA:
 ${schema}
 
-SAMPLE DATA (first 5 rows):
+SAMPLE DATA:
 ${sampleRows}
 
 DATASET INFO:
 - Total rows: ${rowCount}
 - Columns: ${columns.join(", ")}
 
-Analyze this dataset and return the JSON object. No markdown, no code fences, no explanation.`;
+Analyze the dataset(s) and return the JSON object. No markdown, no code fences, no explanation.`;
 
   const result = await model.generateContent(prompt);
   const text = result.response.text().trim();

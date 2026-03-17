@@ -218,8 +218,9 @@ The **Non-Technical Executive (CXO)**: knows what business questions to ask, doe
 | Feature | Status | Details |
 |---|---|---|
 | CSV Upload (drag & drop) | Implemented | Animated progress ring, 3-stage labels |
+| Multi-File Upload | Implemented | Upload up to 5 CSV files, file tab selector, add/remove files |
 | Sample Dataset Bundled | Implemented | 1,000-row YouTube Content Creation dataset |
-| Auto-Dashboard on Upload | Implemented | Skeleton loading → KPIs + charts + summary |
+| Auto-Dashboard on Upload | Implemented | Skeleton loading → KPIs + max 4 charts + summary |
 | Natural Language to SQL | Implemented | Gemini generates SQL from plain-English question |
 | Client-side SQL Execution | Implemented | Custom `executeSQL()` — no backend DB needed |
 | Chart Auto-Selection | Implemented | Bar / Line / Area / Pie chosen by Gemini |
@@ -447,10 +448,12 @@ Turn 3:
 
 The system is entirely agnostic to the structure of the uploaded CSV:
 
-- **Any CSV works** — drag-and-drop or file browser for any CSV file
-- **Automatic type inference** — scans first 100 rows to classify each column as INTEGER, REAL, DATE, BOOLEAN, or TEXT with no manual configuration
-- **Dynamic schema generation** — schema sent to Gemini reflects the actual columns of the uploaded file
-- **Dynamic suggested questions** — Gemini generates questions referencing the actual column names and sample values of the uploaded file
+- **Multi-file upload** — drag-and-drop or file browser supports uploading up to 5 CSV files simultaneously
+- **File tab selector** — interactive tabs showing each uploaded file with row/column counts, active file highlighted, remove button per file, and an "Add file" button
+- **Any CSV works** — automatic type inference scans first 100 rows to classify each column as INTEGER, REAL, DATE, BOOLEAN, or TEXT with no manual configuration
+- **Multi-table schema** — each uploaded file gets a unique table name (`data`, `data_1`, `data_2`, etc.). The combined schema is sent to Gemini so it can generate SQL targeting the correct table
+- **Cross-file auto-dashboard** — auto-analysis generates a maximum of 4 charts distributed across all uploaded files in a single API call
+- **Dynamic suggested questions** — Gemini generates questions referencing actual column names from all loaded files
 - **Sample dataset included** — 1,000-row YouTube Content Creation dataset for immediate use without uploading
 - **Domain agnostic** — sales, marketing, logistics, HR, financial data — the system adapts to whatever data is provided
 

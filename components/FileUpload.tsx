@@ -90,16 +90,17 @@ export default function FileUpload({
     (e: React.DragEvent) => {
       e.preventDefault();
       setIsDragging(false);
-      const file = e.dataTransfer.files[0];
-      if (file) processFile(file);
+      const files = Array.from(e.dataTransfer.files).filter((f) => f.name.endsWith(".csv"));
+      for (const file of files) processFile(file);
     },
     [processFile]
   );
 
   const handleFileInput = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) processFile(file);
+      const files = Array.from(e.target.files || []);
+      for (const file of files) processFile(file);
+      e.target.value = "";
     },
     [processFile]
   );
@@ -217,10 +218,10 @@ export default function FileUpload({
             ) : (
               <>
                 <p className="text-sm font-semibold text-gray-900">
-                  Drag & drop your CSV file here
+                  Drag & drop your CSV files here
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  or click anywhere to browse files
+                  or click to browse — supports multiple files
                 </p>
               </>
             )}
@@ -228,6 +229,7 @@ export default function FileUpload({
             <input
               type="file"
               accept=".csv"
+              multiple
               onChange={handleFileInput}
               className="absolute inset-0 cursor-pointer opacity-0"
             />

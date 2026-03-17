@@ -93,6 +93,12 @@ export function parseCSVData(file: File): Promise<ParsedData> {
   });
 }
 
+// Extract table name from a SQL query (e.g. "SELECT ... FROM data_2 WHERE ..." → "data_2")
+export function extractTableName(sql: string): string {
+  const match = sql.match(/FROM\s+(\w+)/i);
+  return match ? match[1] : "data";
+}
+
 // Simple SQL-like engine for in-browser query execution
 // Supports: SELECT, WHERE, GROUP BY, ORDER BY, LIMIT, aggregate functions
 export function executeSQL(
@@ -105,9 +111,9 @@ export function executeSQL(
 
     // Parse basic SQL structure
     const selectMatch = normalized.match(
-      /SELECT\s+([\s\S]+?)\s+FROM\s+data(?:\s+([\s\S]*))?$/i
+      /SELECT\s+([\s\S]+?)\s+FROM\s+\w+(?:\s+([\s\S]*))?$/i
     );
-    if (!selectMatch) throw new Error("Only SELECT FROM data queries are supported.");
+    if (!selectMatch) throw new Error("Only SELECT FROM <table> queries are supported.");
 
     const selectClause = selectMatch[1].trim();
     const restClause = (selectMatch[2] || "").trim();
