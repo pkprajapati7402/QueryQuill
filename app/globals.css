@@ -153,7 +153,7 @@ body {
 .animate-orb-2          { animation: var(--animate-orb-2); }
 .animate-shimmer        { animation: var(--animate-shimmer); }
 .animate-spin-slow      { animation: var(--animate-spin-slow); }
-.animate-aurora         { animation: aurora-pulse ease-in-out infinite; }
+.animate-aurora         { animation: aurora-pulse ease-in-out infinite; will-change: transform, opacity; transform: translateZ(0); }
 .animate-gradient-x     { animation: gradient-x 6s ease infinite; background-size: 200% 200%; }
 .animate-cursor         { animation: cursor-blink 1.1s step-end infinite; }
 
@@ -255,6 +255,8 @@ body {
     linear-gradient(90deg, rgba(99, 102, 241, 0.07) 1px, transparent 1px);
   background-size: 40px 40px;
   animation: grid-pan 20s linear infinite;
+  will-change: background-position;
+  transform: translateZ(0);
 }
 .animated-grid-amber {
   background-image:
@@ -262,6 +264,8 @@ body {
     linear-gradient(90deg, rgba(245, 158, 11, 0.08) 1px, transparent 1px);
   background-size: 40px 40px;
   animation: grid-pan 18s linear infinite;
+  will-change: background-position;
+  transform: translateZ(0);
 }
 .animated-grid-teal {
   background-image:
@@ -269,6 +273,8 @@ body {
     linear-gradient(90deg, rgba(6, 182, 212, 0.08) 1px, transparent 1px);
   background-size: 40px 40px;
   animation: grid-pan 22s linear infinite;
+  will-change: background-position;
+  transform: translateZ(0);
 }
 .animated-grid-dark {
   background-image:
@@ -276,6 +282,8 @@ body {
     linear-gradient(90deg, rgba(165, 180, 252, 0.07) 1px, transparent 1px);
   background-size: 40px 40px;
   animation: grid-pan 25s linear infinite;
+  will-change: background-position;
+  transform: translateZ(0);
 }
 
 /* ── Nav + Footer utilities ──────────────────────────────────────────── */
@@ -332,48 +340,16 @@ body {
   transform: rotate(180deg);
 }
 
-/* ── Scroll-triggered reveal ─────────────────────────────────────────── */
-.reveal {
-  opacity: 0;
-  transform: translateY(32px);
-  transition: opacity 0.75s cubic-bezier(0.22, 1, 0.36, 1),
-              transform 0.75s cubic-bezier(0.22, 1, 0.36, 1);
-  will-change: opacity, transform;
-}
-.reveal.revealed {
-  opacity: 1;
-  transform: translateY(0);
-}
-.reveal-left {
-  opacity: 0;
-  transform: translateX(-32px);
-  transition: opacity 0.75s cubic-bezier(0.22, 1, 0.36, 1),
-              transform 0.75s cubic-bezier(0.22, 1, 0.36, 1);
-  will-change: opacity, transform;
-}
-.reveal-left.revealed {
-  opacity: 1;
-  transform: translateX(0);
-}
-.reveal-right {
-  opacity: 0;
-  transform: translateX(32px);
-  transition: opacity 0.75s cubic-bezier(0.22, 1, 0.36, 1),
-              transform 0.75s cubic-bezier(0.22, 1, 0.36, 1);
-  will-change: opacity, transform;
-}
+/* ── Elements are always visible (no scroll-triggered animations for smooth scrolling) */
+.reveal,
+.reveal-left,
+.reveal-right,
+.reveal.revealed,
+.reveal-left.revealed,
 .reveal-right.revealed {
   opacity: 1;
-  transform: translateX(0);
+  transform: none;
 }
-
-/* ── Stagger transition delays ───────────────────────────────────────── */
-.reveal-d1 { transition-delay: 60ms; }
-.reveal-d2 { transition-delay: 130ms; }
-.reveal-d3 { transition-delay: 200ms; }
-.reveal-d4 { transition-delay: 270ms; }
-.reveal-d5 { transition-delay: 340ms; }
-.reveal-d6 { transition-delay: 410ms; }
 
 /* ── Marquee scrolling ticker ────────────────────────────────────────── */
 @keyframes marquee {
