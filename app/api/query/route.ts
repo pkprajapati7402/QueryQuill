@@ -13,9 +13,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === "your_gemini_api_key_here") {
+    if (!process.env.OPENROUTER_API_KEY) {
       return NextResponse.json(
-        { error: "Gemini API key not configured. Add your key to .env.local" },
+        { error: "OpenRouter API key not configured. Add OPENROUTER_API_KEY to .env.local" },
         { status: 500 }
       );
     }

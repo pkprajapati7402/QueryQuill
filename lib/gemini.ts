@@ -1,6 +1,4 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+// AI layer — uses OpenRouter free models (same interface names kept for compatibility)
 
 export interface ChartConfig {
   type: "bar" | "line" | "pie" | "area";
@@ -36,6 +34,84 @@ export interface AutoDashboardResponse {
   charts: AutoChartResult[];
   suggestedQuestions: string[];
   error: string | null;
+}
+
+// Ordered fallback list of free models
+const MODELS = [
+  "nvidia/nemotron-3-super-120b-a12b:free",
+  "google/gemma-3-27b-it:free",
+  "google/gemma-3-12b-it:free",
+  "mistralai/mistral-small-3.1-24b-instruct:free",
+  "meta-llama/llama-3.3-70b-instruct:free",
+  "qwen/qwen3-4b:free",
+];
+
+export async function callOpenRouter(
+  systemPrompt: string,
+  userPrompt: string
+): Promise<string> {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) throw new Error("OPENROUTER_API_KEY not configured");
+
+  // Merge system prompt into user message for universal model compatibility
+  // (some models like Gemma reject the "system" role)
+  const combinedPrompt = `${systemPrompt}\n\n---\n\n${userPrompt}`;
+  const messages = [{ role: "user" as const, content: combinedPrompt }];
+
+  for (const model of MODELS) {
+    try {
+      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "X-Title": "QueryQuill",
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature: 0.4,
+          max_tokens: 4096,
+        }),
+      });
+
+      const data = await res.json();
+
+      // Provider-level errors (429, 504, etc.) — try next model
+      if (data.error) {
+        console.log(`[OpenRouter] ${model} error:`, data.error.message || data.error.code);
+        continue;
+      }
+
+      const content = data.choices?.[0]?.message?.content || "";
+      if (!content) {
+        console.log(`[OpenRouter] ${model} returned empty content`);
+        continue;
+      }
+
+      console.log(`[OpenRouter] Success with ${model}`);
+      return content;
+    } catch (err) {
+      console.log(`[OpenRouter] ${model} fetch failed:`, (err as Error).message);
+      continue;
+    }
+  }
+
+  throw new Error("All AI models are temporarily unavailable. Please try again in a moment.");
+}
+
+export function parseJSON<T>(text: string): T {
+  // Strip markdown code fences if present
+  const cleaned = text
+    .replace(/```json\s*/gi, "")
+    .replace(/```\s*/g, "")
+    .trim();
+
+  // Extract JSON object from response
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error(`No JSON found in response: ${text.substring(0, 200)}`);
+
+  return JSON.parse(jsonMatch[0]);
 }
 
 const SYSTEM_PROMPT = `You are a Business Intelligence AI assistant. Given a database schema, sample data, and a user's natural language question, you must return ONLY a valid JSON object (no markdown fences, no explanation, no extra text) with this exact shape:
@@ -81,8 +157,6 @@ export async function queryGemini(
   sampleRows: string,
   conversationHistory?: { role: string; text: string }[]
 ): Promise<GeminiResponse> {
-  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-
   let contextMessages = "";
   if (conversationHistory && conversationHistory.length > 0) {
     contextMessages =
@@ -93,9 +167,7 @@ export async function queryGemini(
         .join("\n");
   }
 
-  const prompt = `${SYSTEM_PROMPT}
-
-DATABASE SCHEMA:
+  const userPrompt = `DATABASE SCHEMA:
 ${schema}
 
 SAMPLE DATA (first 5 rows):
@@ -106,24 +178,16 @@ USER QUESTION: "${question}"
 
 Return ONLY the JSON object. No markdown, no code fences, no explanation.`;
 
-  const result = await model.generateContent(prompt);
-  const text = result.response.text().trim();
-
-  // Strip markdown code fences if present
-  const cleaned = text
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```$/i, "")
-    .trim();
-
   try {
-    const parsed: GeminiResponse = JSON.parse(cleaned);
+    const text = await callOpenRouter(SYSTEM_PROMPT, userPrompt);
+    const parsed = parseJSON<GeminiResponse>(text);
     return parsed;
-  } catch {
+  } catch (err) {
     return {
       sql: "",
       charts: [],
       insight: "",
-      error: `Failed to parse AI response. Raw output: ${text.substring(0, 200)}`,
+      error: (err as Error).message,
     };
   }
 }
@@ -181,11 +245,7 @@ export async function analyzeDataset(
   rowCount: number,
   columns: string[]
 ): Promise<AutoDashboardResponse> {
-  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-
-  const prompt = `${ANALYZE_PROMPT}
-
-DATABASE SCHEMA:
+  const userPrompt = `DATABASE SCHEMA:
 ${schema}
 
 SAMPLE DATA:
@@ -197,24 +257,17 @@ DATASET INFO:
 
 Analyze the dataset(s) and return the JSON object. No markdown, no code fences, no explanation.`;
 
-  const result = await model.generateContent(prompt);
-  const text = result.response.text().trim();
-
-  const cleaned = text
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```$/i, "")
-    .trim();
-
   try {
-    const parsed: AutoDashboardResponse = JSON.parse(cleaned);
+    const text = await callOpenRouter(ANALYZE_PROMPT, userPrompt);
+    const parsed = parseJSON<AutoDashboardResponse>(text);
     return parsed;
-  } catch {
+  } catch (err) {
     return {
       summary: "",
       kpis: [],
       charts: [],
       suggestedQuestions: [],
-      error: `Failed to parse AI analysis. Raw output: ${text.substring(0, 200)}`,
+      error: (err as Error).message,
     };
   }
 }

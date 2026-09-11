@@ -1,5 +1,6 @@
 "use client";
 
+import { forwardRef } from "react";
 import {
   BarChart,
   Bar,
@@ -40,11 +41,24 @@ const COLORS = [
   "#a855f7",
 ];
 
-const CHART_TYPE_META: Record<string, { icon: typeof BarChart3; label: string }> = {
-  bar: { icon: BarChart3, label: "Bar Chart" },
-  line: { icon: TrendingUp, label: "Line Chart" },
-  pie: { icon: PieChartIcon, label: "Pie Chart" },
-  area: { icon: Activity, label: "Area Chart" },
+const GRADIENTS = [
+  { id: "grad0", from: "#6366f1", to: "#818cf8" },
+  { id: "grad1", from: "#8b5cf6", to: "#a78bfa" },
+  { id: "grad2", from: "#ec4899", to: "#f472b6" },
+  { id: "grad3", from: "#f43f5e", to: "#fb7185" },
+  { id: "grad4", from: "#f97316", to: "#fb923c" },
+  { id: "grad5", from: "#eab308", to: "#facc15" },
+  { id: "grad6", from: "#22c55e", to: "#4ade80" },
+  { id: "grad7", from: "#06b6d4", to: "#22d3ee" },
+  { id: "grad8", from: "#3b82f6", to: "#60a5fa" },
+  { id: "grad9", from: "#a855f7", to: "#c084fc" },
+];
+
+const CHART_TYPE_META: Record<string, { icon: typeof BarChart3; label: string; accent: string; accentTo: string }> = {
+  bar: { icon: BarChart3, label: "Bar Chart", accent: "#6366f1", accentTo: "#818cf8" },
+  line: { icon: TrendingUp, label: "Line Chart", accent: "#8b5cf6", accentTo: "#c084fc" },
+  pie: { icon: PieChartIcon, label: "Pie Chart", accent: "#ec4899", accentTo: "#f472b6" },
+  area: { icon: Activity, label: "Area Chart", accent: "#06b6d4", accentTo: "#22d3ee" },
 };
 
 interface ChartRendererProps {
@@ -54,7 +68,51 @@ interface ChartRendererProps {
   index?: number;
 }
 
-export default function ChartRenderer({ config, data, insight, index = 0 }: ChartRendererProps) {
+function GradientDefs() {
+  return (
+    <defs>
+      {GRADIENTS.map((g) => (
+        <linearGradient key={g.id} id={g.id} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={g.from} stopOpacity={0.9} />
+          <stop offset="100%" stopColor={g.to} stopOpacity={0.7} />
+        </linearGradient>
+      ))}
+      {GRADIENTS.map((g) => (
+        <linearGradient key={`${g.id}-area`} id={`${g.id}-area`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={g.from} stopOpacity={0.35} />
+          <stop offset="100%" stopColor={g.to} stopOpacity={0.03} />
+        </linearGradient>
+      ))}
+    </defs>
+  );
+}
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+const CustomTooltip = ({ active, payload, label }: any) => {
+  if (!active || !payload || payload.length === 0) return null;
+  return (
+    <div className="rounded-xl border border-white/80 bg-white/95 px-4 py-3 shadow-xl shadow-indigo-100/40 backdrop-blur-md">
+      <p className="mb-1.5 text-xs font-semibold text-gray-900">{label}</p>
+      {payload.map((entry: any, i: number) => (
+        <div key={i} className="flex items-center gap-2 text-xs">
+          <span
+            className="inline-block h-2.5 w-2.5 rounded-full shadow-sm"
+            style={{ background: entry.color || entry.fill }}
+          />
+          <span className="text-gray-500">{entry.name}:</span>
+          <span className="font-semibold text-gray-900">
+            {typeof entry.value === "number"
+              ? entry.value.toLocaleString()
+              : entry.value}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+};
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+const ChartRenderer = forwardRef<HTMLDivElement, ChartRendererProps>(function ChartRenderer({ config, data, insight, index = 0 }, ref) {
   if (!data || data.length === 0) {
     return (
       <div className="glass-card flex h-64 flex-col items-center justify-center gap-2 rounded-2xl p-6">
@@ -65,23 +123,12 @@ export default function ChartRenderer({ config, data, insight, index = 0 }: Char
   }
 
   const yKeys = Array.isArray(config.y_key) ? config.y_key : [config.y_key];
-  const color = config.color || COLORS[0];
   const meta = CHART_TYPE_META[config.type] || CHART_TYPE_META.bar;
   const TypeIcon = meta.icon;
 
-  const tooltipStyle = {
-    backgroundColor: "rgba(255, 255, 255, 0.95)",
-    backdropFilter: "blur(8px)",
-    border: "1px solid rgba(99, 102, 241, 0.12)",
-    borderRadius: "12px",
-    fontSize: "12px",
-    color: "#0a0a0a",
-    boxShadow: "0 4px 24px rgba(99, 102, 241, 0.1)",
-  };
-
   const commonProps = {
     data,
-    margin: { top: 5, right: 20, left: 10, bottom: 5 },
+    margin: { top: 10, right: 20, left: 10, bottom: 5 },
   };
 
   const renderChart = () => {
@@ -89,51 +136,70 @@ export default function ChartRenderer({ config, data, insight, index = 0 }: Char
       case "bar":
         return (
           <BarChart {...commonProps}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
+            <GradientDefs />
+            <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" vertical={false} strokeOpacity={0.5} />
             <XAxis
               dataKey={config.x_key}
-              tick={{ fontSize: 12, fill: "#71717a" }}
+              tick={{ fontSize: 11, fill: "#71717a", fontWeight: 500 }}
+              axisLine={{ stroke: "#e4e4e7" }}
+              tickLine={false}
               angle={data.length > 8 ? -45 : 0}
               textAnchor={data.length > 8 ? "end" : "middle"}
               height={data.length > 8 ? 80 : 30}
             />
-            <YAxis tick={{ fontSize: 12, fill: "#71717a" }} />
-            <Tooltip contentStyle={tooltipStyle} />
-            {yKeys.length > 1 && <Legend />}
-            {yKeys.map((key, i) => (
-              <Bar
-                key={key}
-                dataKey={key}
-                fill={COLORS[i % COLORS.length]}
-                radius={[6, 6, 0, 0]}
-              />
-            ))}
+            <YAxis tick={{ fontSize: 11, fill: "#a1a1aa" }} axisLine={false} tickLine={false} />
+            <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(99, 102, 241, 0.04)" }} />
+            {yKeys.length > 1 && (
+              <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} iconType="circle" iconSize={8} />
+            )}
+            {yKeys.map((key, i) =>
+              yKeys.length === 1 ? (
+                <Bar key={key} dataKey={key} radius={[8, 8, 0, 0]} barSize={data.length > 12 ? undefined : 36}>
+                  {data.map((_, idx) => (
+                    <Cell key={`cell-${idx}`} fill={`url(#${GRADIENTS[idx % GRADIENTS.length].id})`} />
+                  ))}
+                </Bar>
+              ) : (
+                <Bar
+                  key={key}
+                  dataKey={key}
+                  fill={`url(#${GRADIENTS[i % GRADIENTS.length].id})`}
+                  radius={[8, 8, 0, 0]}
+                  barSize={data.length > 12 ? undefined : 28}
+                />
+              )
+            )}
           </BarChart>
         );
 
       case "line":
         return (
           <LineChart {...commonProps}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
+            <GradientDefs />
+            <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" vertical={false} strokeOpacity={0.5} />
             <XAxis
               dataKey={config.x_key}
-              tick={{ fontSize: 12, fill: "#71717a" }}
+              tick={{ fontSize: 11, fill: "#71717a", fontWeight: 500 }}
+              axisLine={{ stroke: "#e4e4e7" }}
+              tickLine={false}
               angle={data.length > 8 ? -45 : 0}
               textAnchor={data.length > 8 ? "end" : "middle"}
               height={data.length > 8 ? 80 : 30}
             />
-            <YAxis tick={{ fontSize: 12, fill: "#71717a" }} />
-            <Tooltip contentStyle={tooltipStyle} />
-            {yKeys.length > 1 && <Legend />}
+            <YAxis tick={{ fontSize: 11, fill: "#a1a1aa" }} axisLine={false} tickLine={false} />
+            <Tooltip content={<CustomTooltip />} />
+            {yKeys.length > 1 && (
+              <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} iconType="circle" iconSize={8} />
+            )}
             {yKeys.map((key, i) => (
               <Line
                 key={key}
                 type="monotone"
                 dataKey={key}
                 stroke={COLORS[i % COLORS.length]}
-                strokeWidth={2.5}
-                dot={{ r: 3, strokeWidth: 2 }}
-                activeDot={{ r: 6, strokeWidth: 2 }}
+                strokeWidth={3}
+                dot={{ r: 4, strokeWidth: 2, fill: "#fff", stroke: COLORS[i % COLORS.length] }}
+                activeDot={{ r: 7, strokeWidth: 3, fill: COLORS[i % COLORS.length], stroke: "#fff" }}
               />
             ))}
           </LineChart>
@@ -142,64 +208,108 @@ export default function ChartRenderer({ config, data, insight, index = 0 }: Char
       case "area":
         return (
           <AreaChart {...commonProps}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
+            <GradientDefs />
+            <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" vertical={false} strokeOpacity={0.5} />
             <XAxis
               dataKey={config.x_key}
-              tick={{ fontSize: 12, fill: "#71717a" }}
+              tick={{ fontSize: 11, fill: "#71717a", fontWeight: 500 }}
+              axisLine={{ stroke: "#e4e4e7" }}
+              tickLine={false}
+              angle={data.length > 8 ? -45 : 0}
+              textAnchor={data.length > 8 ? "end" : "middle"}
+              height={data.length > 8 ? 80 : 30}
             />
-            <YAxis tick={{ fontSize: 12, fill: "#71717a" }} />
-            <Tooltip contentStyle={tooltipStyle} />
-            {yKeys.length > 1 && <Legend />}
+            <YAxis tick={{ fontSize: 11, fill: "#a1a1aa" }} axisLine={false} tickLine={false} />
+            <Tooltip content={<CustomTooltip />} />
+            {yKeys.length > 1 && (
+              <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} iconType="circle" iconSize={8} />
+            )}
             {yKeys.map((key, i) => (
               <Area
                 key={key}
                 type="monotone"
                 dataKey={key}
                 stroke={COLORS[i % COLORS.length]}
-                fill={COLORS[i % COLORS.length]}
-                fillOpacity={0.12}
+                fill={`url(#${GRADIENTS[i % GRADIENTS.length].id}-area)`}
                 strokeWidth={2.5}
               />
             ))}
           </AreaChart>
         );
 
-      case "pie":
+      case "pie": {
+        const RADIAN = Math.PI / 180;
+        const renderLabel = (props: PieLabelRenderProps) => {
+          const { cx, cy, midAngle, innerRadius, outerRadius, percent, name } = props;
+          const cxN = Number(cx);
+          const cyN = Number(cy);
+          const pct = Number(percent);
+          if (pct < 0.04) return null;
+          const radius = Number(innerRadius) + (Number(outerRadius) - Number(innerRadius)) * 1.45;
+          const x = cxN + radius * Math.cos(-Number(midAngle) * RADIAN);
+          const y = cyN + radius * Math.sin(-Number(midAngle) * RADIAN);
+          return (
+            <text
+              x={x}
+              y={y}
+              fill="#374151"
+              textAnchor={x > cxN ? "start" : "end"}
+              dominantBaseline="central"
+              fontSize={11}
+              fontWeight={600}
+            >
+              {`${name}: ${(pct * 100).toFixed(0)}%`}
+            </text>
+          );
+        };
+
         return (
           <PieChart>
+            <GradientDefs />
             <Pie
               data={data}
               nameKey={config.x_key}
               dataKey={yKeys[0]}
               cx="50%"
               cy="50%"
-              outerRadius={100}
-              innerRadius={50}
-              paddingAngle={2}
-              label={(props: PieLabelRenderProps) =>
-                `${props.name ?? ""}: ${(((props.percent as number) ?? 0) * 100).toFixed(0)}%`
-              }
-              labelLine={true}
+              outerRadius={105}
+              innerRadius={55}
+              paddingAngle={3}
+              label={renderLabel}
+              labelLine={{ stroke: "#d1d5db", strokeWidth: 1 }}
+              strokeWidth={2}
+              stroke="#fff"
             >
               {data.map((_, idx) => (
-                <Cell
-                  key={`cell-${idx}`}
-                  fill={COLORS[idx % COLORS.length]}
-                />
+                <Cell key={`cell-${idx}`} fill={`url(#${GRADIENTS[idx % GRADIENTS.length].id})`} />
               ))}
             </Pie>
-            <Tooltip contentStyle={tooltipStyle} />
+            <Tooltip content={<CustomTooltip />} />
+            <Legend
+              wrapperStyle={{ fontSize: 11, paddingTop: 12 }}
+              iconType="circle"
+              iconSize={8}
+              formatter={(value: string) => (
+                <span style={{ color: "#374151", fontWeight: 500 }}>{value}</span>
+              )}
+            />
           </PieChart>
         );
+      }
 
       default:
         return (
           <BarChart {...commonProps}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
-            <XAxis dataKey={config.x_key} tick={{ fontSize: 12 }} />
-            <YAxis tick={{ fontSize: 12 }} />
-            <Tooltip contentStyle={tooltipStyle} />
-            <Bar dataKey={yKeys[0]} fill={color} radius={[6, 6, 0, 0]} />
+            <GradientDefs />
+            <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" vertical={false} />
+            <XAxis dataKey={config.x_key} tick={{ fontSize: 11 }} tickLine={false} />
+            <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
+            <Tooltip content={<CustomTooltip />} />
+            <Bar dataKey={yKeys[0]} radius={[8, 8, 0, 0]}>
+              {data.map((_, idx) => (
+                <Cell key={`cell-${idx}`} fill={`url(#${GRADIENTS[idx % GRADIENTS.length].id})`} />
+              ))}
+            </Bar>
           </BarChart>
         );
     }
@@ -207,14 +317,15 @@ export default function ChartRenderer({ config, data, insight, index = 0 }: Char
 
   return (
     <div
+      ref={ref}
       className="glass-card glow-card overflow-hidden rounded-2xl animate-fade-up"
       style={{ animationDelay: `${index * 100}ms` }}
     >
       {/* Gradient accent strip */}
       <div
-        className="h-1"
+        className="h-1.5"
         style={{
-          background: `linear-gradient(90deg, ${color}, ${color}44, transparent)`,
+          background: `linear-gradient(90deg, ${meta.accent}, ${meta.accentTo}, transparent)`,
         }}
       />
 
@@ -222,9 +333,15 @@ export default function ChartRenderer({ config, data, insight, index = 0 }: Char
         {/* Header */}
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-sm font-semibold text-gray-900">{config.title}</h3>
-          <div className="flex items-center gap-1.5 rounded-full bg-gray-100 px-2.5 py-1">
-            <TypeIcon className="h-3 w-3 text-muted-foreground" />
-            <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+          <div
+            className="flex items-center gap-1.5 rounded-full px-2.5 py-1"
+            style={{ background: `${meta.accent}10` }}
+          >
+            <TypeIcon className="h-3 w-3" style={{ color: meta.accent }} />
+            <span
+              className="text-[10px] font-medium uppercase tracking-wider"
+              style={{ color: meta.accent }}
+            >
               {meta.label}
             </span>
           </div>
@@ -247,4 +364,6 @@ export default function ChartRenderer({ config, data, insight, index = 0 }: Char
       </div>
     </div>
   );
-}
+});
+
+export default ChartRenderer;

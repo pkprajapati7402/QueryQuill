@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { analyzeDataset } from "@/lib/gemini";
+import { queryStrategy } from "@/lib/openrouter";
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { schema, sampleRows, rowCount, columns } = body;
+    const { question, schema, sampleRows, dataContext, conversationHistory } = body;
 
-    if (!schema) {
+    if (!question || !schema) {
       return NextResponse.json(
-        { error: "Missing schema" },
+        { error: "Missing question or schema" },
         { status: 400 }
       );
     }
@@ -20,16 +20,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const result = await analyzeDataset(
+    const result = await queryStrategy(
+      question,
       schema,
       sampleRows || "",
-      rowCount || 0,
-      columns || []
+      dataContext || undefined,
+      conversationHistory || []
     );
 
     return NextResponse.json(result);
   } catch (error) {
-    console.error("Analyze API error:", error);
+    console.error("Strategy API error:", error);
     return NextResponse.json(
       { error: `Server error: ${(error as Error).message}` },
       { status: 500 }

@@ -15,11 +15,14 @@ import {
   Layers,
   Plus,
   X,
+  FileDown,
 } from "lucide-react";
 import FileUpload from "@/components/FileUpload";
 import ChatInput from "@/components/ChatInput";
 import ChartRenderer from "@/components/ChartRenderer";
+import StrategyCard from "@/components/StrategyCard";
 import { executeSQL, extractTableName } from "@/lib/csv-engine";
+import { classifyQuery, type QueryIntent } from "@/lib/query-router";
 import type { ChartConfig } from "@/lib/gemini";
 
 /* ── Types ────────────────────────────────────────────────────────────── */
@@ -41,6 +44,12 @@ interface QueryResult {
   insight: string;
   sql: string;
   error: string | null;
+  agentType: QueryIntent;
+  strategy?: {
+    strategy: string;
+    keyRecommendations: string[];
+    riskFactors?: string[];
+  };
 }
 
 interface ChatMessage {
@@ -71,7 +80,13 @@ export default function DashboardPage() {
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [showSQL, setShowSQL] = useState<number | null>(null);
   const [showAddFile, setShowAddFile] = useState(false);
+  const [queryIntent, setQueryIntent] = useState<QueryIntent>("data");
   const resultsRef = useRef<HTMLDivElement>(null);
+
+  // Report generation
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+  const autoDashboardChartRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const chatChartRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
 
   // Auto-dashboard state
   const [autoDashboard, setAutoDashboard] = useState<AutoDashboard | null>(null);
@@ -102,6 +117,33 @@ export default function DashboardPage() {
 
   /* ── Auto-analysis for all files ─────────────────────────────────────── */
 
+  // Try executing SQL against the best-matching file, with fallback to all files
+  const executeSQLWithFallback = useCallback(
+    (sql: string, fileList: DataState[]): { data: Record<string, string | number>[]; fileIdx: number } => {
+      const tableName = extractTableName(sql);
+      const matchedFile = fileList.find((f) => f.tableName === tableName);
+
+      // Try matched file first
+      if (matchedFile) {
+        try {
+          const data = executeSQL(sql, matchedFile.rows);
+          if (data.length > 0) return { data, fileIdx: fileList.indexOf(matchedFile) };
+        } catch { /* fall through */ }
+      }
+
+      // Fallback: try every file until one produces results
+      for (let i = 0; i < fileList.length; i++) {
+        try {
+          const data = executeSQL(sql, fileList[i].rows);
+          if (data.length > 0) return { data, fileIdx: i };
+        } catch { /* try next */ }
+      }
+
+      return { data: [], fileIdx: 0 };
+    },
+    []
+  );
+
   const runAutoAnalysis = useCallback(async (fileList: DataState[]) => {
     setIsAnalyzing(true);
     setAnalyzeProgress(15);
@@ -130,20 +172,18 @@ export default function DashboardPage() {
       const analysisResult = await res.json();
 
       if (analysisResult.error) {
-        setAutoDashboard(null);
+        // Keep old dashboard if we had one, only clear if truly first load
+        setAutoDashboard((prev) => prev);
         return;
       }
 
-      // Execute KPI SQL queries — match table name to correct file
+      // Execute KPI SQL queries — with fallback across all files
       setAnalyzeProgress(60);
       const resolvedKPIs = (analysisResult.kpis || []).map(
         (kpi: { label: string; sql: string; description: string }) => {
           try {
-            const tableName = extractTableName(kpi.sql);
-            const matchedFile = fileList.find((f) => f.tableName === tableName) || fileList[0];
-            const fileIdx = fileList.indexOf(matchedFile);
-            const result = executeSQL(kpi.sql, matchedFile.rows);
-            const value = result[0] ? Object.values(result[0])[0] : "N/A";
+            const { data, fileIdx } = executeSQLWithFallback(kpi.sql, fileList);
+            const value = data[0] ? Object.values(data[0])[0] : "N/A";
             return { label: kpi.label, value, description: kpi.description, fileIdx };
           } catch {
             return { label: kpi.label, value: "N/A", description: kpi.description, fileIdx: 0 };
@@ -151,15 +191,13 @@ export default function DashboardPage() {
         }
       );
 
-      // Execute chart SQL queries — match table name to correct file
+      // Execute chart SQL queries — with fallback across all files
       setAnalyzeProgress(80);
       const resolvedCharts = (analysisResult.charts || []).slice(0, MAX_AUTO_CHARTS).map(
         (item: { sql: string; chart: ChartConfig; insight: string }) => {
           try {
-            const tableName = extractTableName(item.sql);
-            const matchedFile = fileList.find((f) => f.tableName === tableName) || fileList[0];
-            const chartData = executeSQL(item.sql, matchedFile.rows);
-            return { config: item.chart, data: chartData, insight: item.insight };
+            const { data } = executeSQLWithFallback(item.sql, fileList);
+            return { config: item.chart, data, insight: item.insight };
           } catch {
             return { config: item.chart, data: [], insight: item.insight };
           }
@@ -177,11 +215,11 @@ export default function DashboardPage() {
       });
     } catch (err) {
       console.error("Auto-analysis failed:", err);
-      setAutoDashboard(null);
+      // Keep previous dashboard on error instead of wiping it
     } finally {
       setIsAnalyzing(false);
     }
-  }, [buildCombinedSchema, buildCombinedSample]);
+  }, [buildCombinedSchema, buildCombinedSample, executeSQLWithFallback]);
 
   /* ── Data loaded handler ────────────────────────────────────────────── */
 
@@ -196,11 +234,10 @@ export default function DashboardPage() {
         const newFiles = [...prev, newFile];
 
         // Run auto-analysis for newly added files
-        // (Delay slightly so state settles)
+        // Keep old dashboard visible while new analysis runs
         setTimeout(() => {
           setResults([]);
           setChatHistory([]);
-          setAutoDashboard(null);
           setActiveFileIndex(0);
           setShowAddFile(false);
           runAutoAnalysis(newFiles);
@@ -231,7 +268,6 @@ export default function DashboardPage() {
         setActiveFileIndex((a) => Math.min(a, renamed.length - 1));
         setResults([]);
         setChatHistory([]);
-        setAutoDashboard(null);
         setTimeout(() => runAutoAnalysis(renamed), 100);
         return renamed;
       });
@@ -246,6 +282,8 @@ export default function DashboardPage() {
       if (files.length === 0) return;
 
       setIsQuerying(true);
+      const intent = classifyQuery(question);
+      setQueryIntent(intent);
 
       const newHistory: ChatMessage[] = [
         ...chatHistory,
@@ -256,6 +294,48 @@ export default function DashboardPage() {
       const combinedSample = buildCombinedSample(files);
 
       try {
+        /* ── Strategy-only route ──────────────────────────────────────── */
+        if (intent === "strategy") {
+          const res = await fetch("/api/strategy", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              question,
+              schema: combinedSchema,
+              sampleRows: combinedSample,
+              conversationHistory: chatHistory.slice(-6),
+            }),
+          });
+
+          const strategyResult = await res.json();
+
+          const result: QueryResult = {
+            question,
+            charts: [],
+            chartData: [],
+            insight: "",
+            sql: "",
+            error: strategyResult.error || null,
+            agentType: "strategy",
+            strategy: strategyResult.error
+              ? undefined
+              : {
+                  strategy: strategyResult.strategy,
+                  keyRecommendations: strategyResult.keyRecommendations || [],
+                  riskFactors: strategyResult.riskFactors,
+                },
+          };
+
+          setResults((prev) => [...prev, result]);
+          newHistory.push({
+            role: "assistant",
+            text: `[Strategy] ${strategyResult.strategy?.slice(0, 200) || strategyResult.error || "Strategy generated."}`,
+          });
+          setChatHistory(newHistory);
+          return;
+        }
+
+        /* ── Data route (also first step of hybrid) ───────────────────── */
         const res = await fetch("/api/query", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -279,6 +359,7 @@ export default function DashboardPage() {
               insight: "",
               sql: "",
               error: geminiResult.error,
+              agentType: intent,
             },
           ]);
           newHistory.push({
@@ -297,6 +378,7 @@ export default function DashboardPage() {
             insight: geminiResult.insight || "No insight available.",
             sql: "",
             error: null,
+            agentType: intent,
           };
           setResults((prev) => [...prev, result]);
           newHistory.push({
@@ -307,20 +389,53 @@ export default function DashboardPage() {
           return;
         }
 
-        // Match SQL table name to correct file's rows
-        const tableName = extractTableName(geminiResult.sql);
-        const matchedFile = files.find((f) => f.tableName === tableName) || files[activeFileIndex];
+        // Match SQL table name to correct file's rows (with fallback)
+        const { data: queryData, fileIdx: _matchedIdx } = (() => {
+          try {
+            return executeSQLWithFallback(geminiResult.sql, files);
+          } catch {
+            return { data: [] as Record<string, string | number>[], fileIdx: activeFileIndex };
+          }
+        })();
 
-        let queryData: Record<string, string | number>[] = [];
-        let sqlError: string | null = null;
-
-        try {
-          queryData = executeSQL(geminiResult.sql, matchedFile.rows);
-        } catch (err) {
-          sqlError = `SQL execution failed: ${(err as Error).message}`;
-        }
+        const sqlError: string | null = queryData.length === 0 && geminiResult.sql
+          ? "SQL execution returned no results — the query may reference columns not in your data."
+          : null;
 
         const chartData = geminiResult.charts.map(() => queryData);
+
+        /* ── Hybrid: also call strategy agent with data context ───────── */
+        let strategyData: QueryResult["strategy"] | undefined;
+
+        if (intent === "hybrid" && !sqlError) {
+          try {
+            const dataContext = `Query: ${geminiResult.sql}\nResults (first 20 rows):\n${JSON.stringify(queryData.slice(0, 20), null, 2)}\n\nData Insight: ${geminiResult.insight}`;
+
+            const stratRes = await fetch("/api/strategy", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                question,
+                schema: combinedSchema,
+                sampleRows: combinedSample,
+                dataContext,
+                conversationHistory: chatHistory.slice(-6),
+              }),
+            });
+
+            const strategyResult = await stratRes.json();
+
+            if (!strategyResult.error) {
+              strategyData = {
+                strategy: strategyResult.strategy,
+                keyRecommendations: strategyResult.keyRecommendations || [],
+                riskFactors: strategyResult.riskFactors,
+              };
+            }
+          } catch {
+            // Strategy agent failure in hybrid mode is non-fatal
+          }
+        }
 
         const result: QueryResult = {
           question,
@@ -329,12 +444,16 @@ export default function DashboardPage() {
           insight: geminiResult.insight,
           sql: geminiResult.sql,
           error: sqlError,
+          agentType: intent,
+          strategy: strategyData,
         };
 
         setResults((prev) => [...prev, result]);
         newHistory.push({
           role: "assistant",
-          text: geminiResult.insight || "Dashboard generated.",
+          text: strategyData
+            ? `${geminiResult.insight || "Dashboard generated."} [Strategy] ${strategyData.strategy?.slice(0, 150)}`
+            : geminiResult.insight || "Dashboard generated.",
         });
         setChatHistory(newHistory);
       } catch (err) {
@@ -347,6 +466,7 @@ export default function DashboardPage() {
             insight: "",
             sql: "",
             error: `Request failed: ${(err as Error).message}`,
+            agentType: intent,
           },
         ]);
       } finally {
@@ -360,6 +480,76 @@ export default function DashboardPage() {
     setResults([]);
     setChatHistory([]);
   }, []);
+
+  /* ── Generate Report handler ─────────────────────────────────────────── */
+
+  const handleGenerateReport = useCallback(async () => {
+    if (files.length === 0) return;
+    setIsGeneratingReport(true);
+
+    try {
+      const { generateReport } = await import("@/lib/report-generator");
+
+      // Build auto-dashboard chart elements
+      const autoDashboardCharts = (autoDashboard?.charts || [])
+        .map((chart, i) => {
+          const el = autoDashboardChartRefs.current[i];
+          if (!el) return null;
+          return {
+            title: chart.config.title,
+            type: chart.config.type,
+            insight: chart.insight,
+            element: el,
+          };
+        })
+        .filter((c): c is NonNullable<typeof c> => c !== null);
+
+      // Build chat query results with chart elements
+      const queryResults = results
+        .filter((r) => !r.error)
+        .map((result, idx) => {
+          const charts = result.charts
+            .map((chart, chartIdx) => {
+              const el = chatChartRefs.current.get(`${idx}-${chartIdx}`);
+              if (!el) return null;
+              return { title: chart.title, type: chart.type, element: el };
+            })
+            .filter((c): c is NonNullable<typeof c> => c !== null);
+
+          return {
+            question: result.question,
+            insight: result.insight,
+            sql: result.sql,
+            agentType: result.agentType as "data" | "strategy" | "hybrid",
+            charts,
+            strategy: result.strategy,
+          };
+        });
+
+      // Build KPIs
+      const kpis = (autoDashboard?.kpis || []).map((kpi) => ({
+        label: kpi.label,
+        value: kpi.value,
+        description: kpi.description,
+      }));
+
+      await generateReport({
+        fileNames: files.map((f) => f.fileName),
+        totalRows: files.reduce((s, f) => s + f.rowCount, 0),
+        totalFiles: files.length,
+        columns: files.map((f) => f.columns),
+        summary: autoDashboard?.summary || "",
+        kpis,
+        autoDashboardCharts,
+        queryResults,
+        generatedAt: new Date(),
+      });
+    } catch (err) {
+      console.error("Report generation failed:", err);
+    } finally {
+      setIsGeneratingReport(false);
+    }
+  }, [files, autoDashboard, results]);
 
   /* ── Helpers ────────────────────────────────────────────────────────── */
 
@@ -422,6 +612,25 @@ export default function DashboardPage() {
                 >
                   <Trash2 className="h-3 w-3" />
                   Clear
+                </button>
+              )}
+              {(autoDashboard || results.length > 0) && (
+                <button
+                  onClick={handleGenerateReport}
+                  disabled={isGeneratingReport}
+                  className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 px-3 py-1.5 text-xs font-medium text-white transition-all hover:from-indigo-700 hover:to-violet-700 disabled:opacity-60"
+                >
+                  {isGeneratingReport ? (
+                    <>
+                      <div className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <FileDown className="h-3 w-3" />
+                      Generate Report
+                    </>
+                  )}
                 </button>
               )}
             </div>
@@ -639,6 +848,7 @@ export default function DashboardPage() {
                       {autoDashboard.charts.map((chart, i) => (
                         <ChartRenderer
                           key={i}
+                          ref={(el) => { autoDashboardChartRefs.current[i] = el; }}
                           config={chart.config}
                           data={chart.data}
                           insight={chart.insight}
@@ -699,7 +909,9 @@ export default function DashboardPage() {
 
                   {/* AI response */}
                   <div className="flex justify-start">
-                    <div className="chat-bubble-ai w-full max-w-4xl px-5 py-4">
+                    <div className={`w-full max-w-4xl px-5 py-4 ${
+                      result.agentType === "strategy" ? "chat-bubble-strategy" : "chat-bubble-ai"
+                    }`}>
                       {/* Error */}
                       {result.error && (
                         <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
@@ -707,7 +919,7 @@ export default function DashboardPage() {
                         </div>
                       )}
 
-                      {/* Charts */}
+                      {/* Charts (data & hybrid only) */}
                       {result.charts.length > 0 && !result.error && (
                         <div
                           className={`mb-3 grid gap-4 ${
@@ -719,6 +931,7 @@ export default function DashboardPage() {
                           {result.charts.map((chart, chartIdx) => (
                             <ChartRenderer
                               key={chartIdx}
+                              ref={(el) => { chatChartRefs.current.set(`${idx}-${chartIdx}`, el); }}
                               config={chart}
                               data={result.chartData[chartIdx] || []}
                               index={chartIdx}
@@ -727,8 +940,8 @@ export default function DashboardPage() {
                         </div>
                       )}
 
-                      {/* Insight */}
-                      {result.insight && !result.error && (
+                      {/* Data Insight (data & hybrid only) */}
+                      {result.insight && !result.error && result.agentType !== "strategy" && (
                         <div className="flex items-start gap-2.5 rounded-xl bg-indigo-50/60 p-3.5">
                           <Lightbulb className="mt-0.5 h-4 w-4 shrink-0 text-indigo-500" />
                           <p className="text-sm leading-relaxed text-gray-700">
@@ -737,7 +950,18 @@ export default function DashboardPage() {
                         </div>
                       )}
 
-                      {/* SQL Toggle */}
+                      {/* Strategy Card (strategy & hybrid) */}
+                      {result.strategy && !result.error && (
+                        <div className={result.agentType === "hybrid" ? "mt-4" : ""}>
+                          <StrategyCard
+                            strategy={result.strategy.strategy}
+                            keyRecommendations={result.strategy.keyRecommendations}
+                            riskFactors={result.strategy.riskFactors}
+                          />
+                        </div>
+                      )}
+
+                      {/* SQL Toggle (data & hybrid only) */}
                       {result.sql && (
                         <div className="mt-3">
                           <button
@@ -765,14 +989,26 @@ export default function DashboardPage() {
             {/* ── Loading State ─────────────────────────────────────────── */}
             {isQuerying && (
               <div className="flex justify-start animate-fade-in">
-                <div className="chat-bubble-ai flex items-center gap-3 px-5 py-4">
-                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+                <div className={`flex items-center gap-3 px-5 py-4 ${
+                  queryIntent === "strategy" ? "chat-bubble-strategy" : "chat-bubble-ai"
+                }`}>
+                  <div className={`h-5 w-5 animate-spin rounded-full border-2 border-t-transparent ${
+                    queryIntent === "strategy" ? "border-emerald-500" : "border-indigo-500"
+                  }`} />
                   <div>
                     <p className="text-sm font-medium text-gray-900">
-                      Analyzing your question...
+                      {queryIntent === "strategy"
+                        ? "Consulting the Strategy Advisor..."
+                        : queryIntent === "hybrid"
+                          ? "Analyzing data & preparing strategic insights..."
+                          : "Analyzing your question..."}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Generating SQL, selecting chart types, and building your dashboard
+                      {queryIntent === "strategy"
+                        ? "Generating growth recommendations based on your data"
+                        : queryIntent === "hybrid"
+                          ? "Running data query, then building strategic advice"
+                          : "Generating SQL, selecting chart types, and building your dashboard"}
                     </p>
                   </div>
                 </div>
